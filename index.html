@@ -1,0 +1,763 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>GSSH Health</title>
+
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+<style>
+@import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+:root{
+  --bg:#EEF0F3; --surface:#FFFFFF; --ink:#191C22; --muted:#767C88;
+  --line:#E4E7EC; --primary:#FF4B2B; --primary-d:#E23D1F;
+  --success:#12B886; --gold:#F5A524; --iron:#20242D;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;margin:0;padding:0;}
+html,body{background:var(--bg);}
+body{
+  font-family:'Pretendard','Pretendard Variable',-apple-system,BlinkMacSystemFont,
+    "Apple SD Gothic Neo","Malgun Gothic",system-ui,sans-serif;
+  color:var(--ink);-webkit-font-smoothing:antialiased;
+}
+button{font-family:inherit;cursor:pointer;border:none;background:none;}
+input,textarea,select{font-family:inherit;}
+:focus-visible{outline:3px solid rgba(255,75,43,.45);outline-offset:2px;}
+
+.gc-shell{max-width:480px;margin:0 auto;min-height:100vh;background:var(--bg);
+  position:relative;display:flex;flex-direction:column;}
+.gc-scroll{flex:1;overflow-y:auto;padding:0 16px 96px;}
+
+.gc-head{position:sticky;top:0;z-index:20;background:var(--bg);
+  padding:14px 16px 10px;display:flex;align-items:center;justify-content:space-between;gap:10px;}
+.gc-brand{display:flex;align-items:center;gap:8px;font-weight:800;font-size:17px;letter-spacing:-.02em;}
+.gc-brand .fire{font-size:19px;}
+.gc-me{display:flex;align-items:center;gap:7px;background:var(--surface);
+  border:1px solid var(--line);padding:6px 11px;border-radius:999px;font-size:13px;font-weight:700;}
+.gc-me .dot{width:7px;height:7px;border-radius:99px;background:var(--success);}
+.gc-me button{color:var(--muted);font-size:12px;font-weight:600;padding:0;margin-left:2px;}
+
+.gc-hero{background:var(--iron);border-radius:22px;padding:20px 20px 18px;color:#fff;
+  position:relative;overflow:hidden;margin-top:2px;}
+.gc-hero .wk{font-size:12.5px;font-weight:600;color:#AEB4C0;}
+.gc-hero .big{display:flex;align-items:baseline;gap:10px;margin-top:6px;}
+.gc-hero .big .n{font-size:52px;font-weight:900;line-height:.95;letter-spacing:-.04em;}
+.gc-hero .big .of{font-size:20px;font-weight:700;color:#8A909C;}
+.gc-hero .cap{font-size:13.5px;color:#C4C9D2;margin-top:8px;line-height:1.45;}
+.gc-hero .track{height:9px;border-radius:99px;background:rgba(255,255,255,.13);margin-top:14px;overflow:hidden;}
+.gc-hero .fill{height:100%;border-radius:99px;background:linear-gradient(90deg,#FF4B2B,#F5A524);
+  transition:width .5s cubic-bezier(.2,.7,.2,1);}
+
+.gc-sec{margin:22px 2px 11px;display:flex;align-items:center;justify-content:space-between;}
+.gc-sec h2{font-size:16px;font-weight:800;letter-spacing:-.02em;}
+.gc-sec .side{font-size:12.5px;color:var(--muted);font-weight:600;}
+
+.gc-lb{display:flex;flex-direction:column;gap:9px;}
+.gc-row{background:var(--surface);border:1px solid var(--line);border-radius:16px;
+  padding:13px 14px;display:flex;align-items:center;gap:12px;}
+.gc-row.done{border-color:rgba(18,184,134,.4);background:linear-gradient(180deg,#F4FCF8,#fff);}
+.gc-rank{width:26px;text-align:center;font-weight:900;font-size:15px;color:var(--muted);flex:none;}
+.gc-rank.medal{font-size:19px;}
+.gc-who{flex:1;min-width:0;}
+.gc-who .nm{font-weight:800;font-size:15px;display:flex;align-items:center;gap:6px;}
+.gc-badge{font-size:10.5px;font-weight:800;padding:2px 7px;border-radius:99px;}
+.gc-badge.g{background:rgba(18,184,134,.14);color:#0C8F68;}
+.gc-badge.you{background:rgba(255,75,43,.12);color:var(--primary-d);}
+.gc-pips{display:flex;gap:5px;margin-top:7px;}
+.gc-pip{flex:1;height:7px;border-radius:99px;background:#EAECF0;transition:background .3s;}
+.gc-pip.on{background:var(--primary);}
+.gc-pip.extra{background:var(--gold);}
+.gc-cnt{flex:none;text-align:right;}
+.gc-cnt .c{font-size:22px;font-weight:900;letter-spacing:-.03em;line-height:1;}
+.gc-cnt .t{font-size:12px;color:var(--muted);font-weight:700;}
+
+.gc-mission{background:linear-gradient(160deg,#FFFCF3,#FFF6E4);
+  border:1px solid rgba(245,165,36,.35);border-radius:20px;padding:17px 17px 16px;}
+.gc-mission .kk{display:flex;align-items:center;gap:7px;font-weight:800;font-size:13px;color:#B87A08;}
+.gc-mission h3{font-size:19px;font-weight:900;letter-spacing:-.03em;margin:9px 0 0;line-height:1.25;}
+.gc-mission .desc{font-size:14px;color:#5B5138;margin-top:6px;line-height:1.5;white-space:pre-wrap;}
+.gc-prize{display:inline-flex;align-items:center;gap:6px;margin-top:12px;
+  background:var(--gold);color:#3A2A00;font-weight:900;font-size:14px;padding:7px 13px;border-radius:12px;}
+.gc-ach{margin-top:14px;padding-top:13px;border-top:1px dashed rgba(184,122,8,.3);}
+.gc-ach .lab{font-size:12px;font-weight:700;color:#9A7A2E;margin-bottom:8px;}
+.gc-chips{display:flex;flex-wrap:wrap;gap:6px;}
+.gc-chip{background:#fff;border:1px solid rgba(245,165,36,.4);border-radius:99px;
+  padding:5px 11px;font-size:13px;font-weight:800;display:flex;align-items:center;gap:5px;}
+.gc-empty{background:var(--surface);border:1px dashed var(--line);border-radius:18px;
+  padding:26px 18px;text-align:center;color:var(--muted);font-size:14px;line-height:1.55;}
+
+.gc-seg{display:flex;background:var(--surface);border:1px solid var(--line);
+  border-radius:14px;padding:4px;gap:4px;}
+.gc-seg button{flex:1;padding:11px;border-radius:10px;font-weight:800;font-size:14px;color:var(--muted);}
+.gc-seg button.act{background:var(--ink);color:#fff;}
+.gc-catgrid{display:flex;flex-wrap:wrap;gap:8px;}
+.gc-cat{padding:9px 14px;border-radius:12px;border:1.5px solid var(--line);
+  background:var(--surface);font-weight:700;font-size:14px;color:var(--ink);}
+.gc-cat.on{border-color:var(--primary);background:rgba(255,75,43,.07);color:var(--primary-d);}
+.gc-drop{border:2px dashed #D4D8DF;border-radius:18px;background:var(--surface);
+  padding:24px;text-align:center;color:var(--muted);font-weight:700;font-size:14px;width:100%;}
+.gc-drop .ic{font-size:30px;display:block;margin-bottom:8px;}
+.gc-preview{position:relative;border-radius:18px;overflow:hidden;border:1px solid var(--line);}
+.gc-preview img{width:100%;display:block;max-height:340px;object-fit:cover;}
+.gc-preview .x{position:absolute;top:10px;right:10px;background:rgba(0,0,0,.62);color:#fff;
+  width:34px;height:34px;border-radius:99px;font-size:17px;font-weight:800;line-height:1;}
+.gc-note{width:100%;border:1px solid var(--line);border-radius:14px;padding:12px 14px;
+  font-size:14px;background:var(--surface);resize:none;}
+.gc-cta{width:100%;background:var(--primary);color:#fff;font-weight:900;font-size:16px;
+  padding:15px;border-radius:15px;box-shadow:0 6px 16px rgba(255,75,43,.28);}
+.gc-cta:disabled{background:#D6D9DF;color:#fff;box-shadow:none;}
+.gc-cta.ghost{background:var(--surface);color:var(--ink);border:1.5px solid var(--line);box-shadow:none;}
+
+.gc-item{background:var(--surface);border:1px solid var(--line);border-radius:15px;
+  padding:11px;display:flex;gap:11px;align-items:center;}
+.gc-thumb{width:56px;height:56px;border-radius:11px;object-fit:cover;flex:none;background:#EEF0F3;}
+.gc-item .body{flex:1;min-width:0;}
+.gc-item .body .t1{font-weight:800;font-size:14px;display:flex;gap:6px;align-items:center;}
+.gc-item .body .t2{font-size:12.5px;color:var(--muted);margin-top:3px;}
+.gc-del{flex:none;color:var(--muted);font-size:15px;font-weight:800;padding:8px;border-radius:10px;}
+
+.gc-st{font-size:11px;font-weight:800;padding:3px 9px;border-radius:99px;flex:none;}
+.gc-st.p{background:#FFF4E5;color:#C67C0A;}
+.gc-st.a{background:rgba(18,184,134,.14);color:#0C8F68;}
+.gc-st.r{background:#FBE9E7;color:#C2402A;}
+.gc-qbtns{display:flex;gap:8px;margin-top:10px;}
+.gc-qbtns button{flex:1;padding:10px;border-radius:11px;font-weight:800;font-size:13.5px;}
+.gc-qbtns .ok{background:var(--success);color:#fff;}
+.gc-qbtns .no{background:#F3F4F6;color:#C2402A;}
+
+.gc-sum{background:var(--iron);color:#fff;border-radius:16px;padding:14px 16px;
+  display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;}
+.gc-sum .l{font-size:13px;color:#C4C9D2;font-weight:600;}
+.gc-sum .r{font-size:20px;font-weight:900;}
+.gc-subtabs{display:flex;gap:8px;margin:2px 0 12px;}
+.gc-subtabs button{flex:1;padding:9px;border-radius:11px;font-weight:800;font-size:13.5px;
+  border:1.5px solid var(--line);background:var(--surface);color:var(--muted);}
+.gc-subtabs button.act{border-color:var(--ink);background:var(--ink);color:#fff;}
+.gc-penrow{background:var(--surface);border:1px solid var(--line);border-radius:14px;
+  padding:12px 14px;display:flex;align-items:center;gap:12px;}
+.gc-penrow.miss{border-color:rgba(255,75,43,.35);background:linear-gradient(180deg,#FFF6F4,#fff);}
+.gc-penrow .who{flex:1;min-width:0;font-weight:800;font-size:15px;}
+.gc-penrow .who .s{font-size:12.5px;color:var(--muted);font-weight:600;margin-top:2px;}
+.gc-pentag{flex:none;background:var(--primary);color:#fff;font-weight:800;font-size:12.5px;padding:6px 11px;border-radius:10px;}
+.gc-pentag.warn{background:#FFF0E8;color:var(--primary-d);}
+
+.gc-nav{position:fixed;bottom:0;left:0;right:0;z-index:30;
+  max-width:480px;margin:0 auto;background:rgba(255,255,255,.94);
+  backdrop-filter:blur(10px);border-top:1px solid var(--line);
+  display:flex;padding:7px 4px calc(7px + env(safe-area-inset-bottom,0));}
+.gc-nav button{flex:1;position:relative;display:flex;flex-direction:column;align-items:center;gap:3px;
+  padding:6px 0;color:var(--muted);font-size:11px;font-weight:700;}
+.gc-nav button .ic{font-size:20px;line-height:1;}
+.gc-nav button.act{color:var(--primary);}
+.gc-navbadge{position:absolute;top:0;left:50%;margin-left:6px;background:var(--primary);color:#fff;
+  font-size:10px;font-weight:800;border-radius:99px;padding:1px 6px;}
+
+.gc-center{flex:1;display:flex;flex-direction:column;justify-content:center;padding:28px 22px;min-height:100vh;}
+.gc-logo{font-size:44px;text-align:center;}
+.gc-title{font-size:27px;font-weight:900;letter-spacing:-.03em;text-align:center;margin-top:10px;}
+.gc-subtitle{font-size:14.5px;color:var(--muted);text-align:center;margin-top:8px;line-height:1.55;}
+.gc-field{margin-top:16px;}
+.gc-field label{font-size:13px;font-weight:800;display:block;margin-bottom:7px;}
+.gc-input{width:100%;border:1.5px solid var(--line);border-radius:14px;padding:14px;
+  font-size:16px;background:var(--surface);}
+.gc-input:focus{border-color:var(--primary);outline:none;}
+.gc-pick{display:flex;flex-direction:column;gap:9px;}
+.gc-pickbtn{width:100%;text-align:left;background:var(--surface);border:1.5px solid var(--line);
+  border-radius:14px;padding:15px 16px;font-weight:800;font-size:15px;display:flex;
+  align-items:center;justify-content:space-between;}
+.gc-pickbtn .r{color:var(--muted);font-size:13px;font-weight:600;}
+.gc-link{background:none;color:var(--primary-d);font-weight:800;font-size:14px;padding:6px;}
+.gc-divider{display:flex;align-items:center;gap:12px;margin:18px 0;color:var(--muted);font-size:12px;font-weight:600;}
+.gc-divider::before,.gc-divider::after{content:"";flex:1;height:1px;background:var(--line);}
+.gc-hint{font-size:12px;color:var(--muted);margin-top:7px;line-height:1.5;}
+.gc-mut{color:var(--muted);font-size:12.5px;}
+
+.gc-toast{position:fixed;left:50%;bottom:96px;transform:translateX(-50%);
+  background:var(--ink);color:#fff;padding:12px 18px;border-radius:13px;font-weight:700;
+  font-size:14px;z-index:50;max-width:88%;text-align:center;box-shadow:0 8px 24px rgba(0,0,0,.25);}
+@media (prefers-reduced-motion: reduce){*{transition:none!important;}}
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<!-- 최신 Babel이 JSX 변환 시 import를 자동으로 넣는 문제를 막기 위해
+     classic 런타임(React.createElement)으로 변환하도록 설정합니다. -->
+<script>
+  Babel.registerPreset('react-classic', {
+    presets: [[Babel.availablePresets.react, { runtime: 'classic' }]],
+  });
+</script>
+
+<script type="text/babel" data-presets="react-classic">
+/* ============================================================
+   ★★★ 설정 (여기만 바꾸면 됩니다) ★★★
+   ============================================================ */
+const SUPABASE_URL = "https://qtvkxtizvkgfgebmmtog.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_0c5VBJQ2QWGQzVgj9MWXzw_CWucDSsc";
+
+const APP_TITLE = "GSSH Health";      // 모임 이름
+const WEEKLY_TARGET = 3;             // 주간 권장 횟수
+const ADMIN_PIN = "9876";            // 방장만 아는 4자리 PIN (꼭 바꾸세요)
+const PENALTY_TEXT = "5,000원";      // 미달성 시 벌금 (원하는 대로: "치킨 1마리" 등)
+/* ============================================================ */
+
+const { useState, useEffect, useRef, useCallback } = React;
+const configured = !SUPABASE_URL.includes("YOUR-PROJECT") && !SUPABASE_ANON_KEY.includes("YOUR-ANON");
+const sb = configured ? supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
+
+const CATEGORIES = ["가슴","등","하체","어깨","팔","복근","유산소","전신","기타"];
+const ME_KEY = "gymcrew:me";
+const ADMIN_KEY = "gymcrew:admin";
+
+/* ---------- 유틸 ---------- */
+function weekKeyOf(date){
+  const d = new Date(date);
+  const day = (d.getDay()+6)%7;
+  d.setHours(0,0,0,0); d.setDate(d.getDate()-day);
+  const y=d.getFullYear(), m=String(d.getMonth()+1).padStart(2,"0"), dd=String(d.getDate()).padStart(2,"0");
+  return `${y}-${m}-${dd}`;
+}
+function prevWeekKey(wk){ const d=new Date(wk+"T00:00:00"); d.setDate(d.getDate()-7); return weekKeyOf(d); }
+function weekLabel(wk){
+  const s=new Date(wk+"T00:00:00"); const e=new Date(s); e.setDate(e.getDate()+6);
+  const f=d=>`${d.getMonth()+1}.${d.getDate()}`; return `${f(s)} – ${f(e)}`;
+}
+function timeAgo(ts){
+  const s=Math.floor((Date.now()-new Date(ts).getTime())/1000);
+  if(s<60)return"방금 전"; if(s<3600)return`${Math.floor(s/60)}분 전`;
+  if(s<86400)return`${Math.floor(s/3600)}시간 전`; return`${Math.floor(s/86400)}일 전`;
+}
+function compressImage(file, maxSize=1000, quality=0.72){
+  return new Promise((resolve,reject)=>{
+    const reader=new FileReader();
+    reader.onload=e=>{
+      const img=new Image();
+      img.onload=()=>{
+        let {width,height}=img;
+        if(width>height && width>maxSize){height=Math.round(height*maxSize/width);width=maxSize;}
+        else if(height>=width && height>maxSize){width=Math.round(width*maxSize/height);height=maxSize;}
+        const canvas=document.createElement("canvas");
+        canvas.width=width; canvas.height=height;
+        canvas.getContext("2d").drawImage(img,0,0,width,height);
+        canvas.toBlob(b=>{ b?resolve({blob:b,url:URL.createObjectURL(b)}):reject(new Error("fail")); },"image/jpeg",quality);
+      };
+      img.onerror=reject; img.src=e.target.result;
+    };
+    reader.onerror=reject; reader.readAsDataURL(file);
+  });
+}
+// 승인된 운동 인증 횟수
+function workoutCount(subs, memberId, wk){
+  return subs.filter(s=>s.member_id===memberId && s.type==="workout" && s.status==="approved" && s.week_key===wk).length;
+}
+
+/* ============================================================ */
+function App(){
+  const [ready,setReady]=useState(false);
+  const [members,setMembers]=useState([]);
+  const [subs,setSubs]=useState([]);          // 이번주 + 지난주
+  const [mission,setMission]=useState(null);
+  const [meId,setMeId]=useState(localStorage.getItem(ME_KEY)||null);
+  const [tab,setTab]=useState("board");
+  const [toast,setToast]=useState("");
+  const [adminUnlocked,setAdminUnlocked]=useState(localStorage.getItem(ADMIN_KEY)==="1");
+
+  const wk=weekKeyOf(new Date());
+  const pwk=prevWeekKey(wk);
+  const me=members.find(m=>m.id===meId)||null;
+  const pending=subs.filter(s=>s.status==="pending");
+
+  const showToast=useCallback(msg=>{ setToast(msg); setTimeout(()=>setToast(""),2200); },[]);
+
+  const loadAll=useCallback(async()=>{
+    if(!sb) return;
+    const [mem,sub,mis]=await Promise.all([
+      sb.from("members").select("*").order("created_at"),
+      sb.from("submissions").select("*").in("week_key",[wk,pwk]).order("created_at",{ascending:false}),
+      sb.from("missions").select("*").eq("week_key",wk).maybeSingle(),
+    ]);
+    if(mem.data) setMembers(mem.data);
+    if(sub.data) setSubs(sub.data);
+    setMission(mis.data||null);
+  },[wk,pwk]);
+
+  useEffect(()=>{ (async()=>{ await loadAll(); setReady(true); })(); },[loadAll]);
+  useEffect(()=>{
+    if(!ready||!sb) return;
+    const iv=setInterval(loadAll,12000);
+    const onVis=()=>document.visibilityState==="visible"&&loadAll();
+    document.addEventListener("visibilitychange",onVis);
+    return ()=>{ clearInterval(iv); document.removeEventListener("visibilitychange",onVis); };
+  },[ready,loadAll]);
+
+  const login=(id)=>{ localStorage.setItem(ME_KEY,id); setMeId(id); loadAll(); };
+  const logout=()=>{ localStorage.removeItem(ME_KEY); setMeId(null); setTab("board"); };
+  const unlockAdmin=()=>{ localStorage.setItem(ADMIN_KEY,"1"); setAdminUnlocked(true); };
+  const lockAdmin=()=>{ localStorage.removeItem(ADMIN_KEY); setAdminUnlocked(false); setTab("board"); };
+
+  if(!configured){
+    return (<div className="gc-shell"><div className="gc-center">
+      <div className="gc-logo">🔑</div>
+      <div className="gc-title">설정이 한 가지 남았어요</div>
+      <div className="gc-subtitle">index.html 위쪽의 <b>SUPABASE_URL</b> 과<br/>
+        <b>SUPABASE_ANON_KEY</b> 를 본인 값으로 바꾼 뒤 다시 열어주세요.</div>
+    </div></div>);
+  }
+  if(!ready){
+    return <div className="gc-shell"><div className="gc-center"><div className="gc-logo">💪</div>
+      <div className="gc-subtitle" style={{marginTop:14}}>불러오는 중…</div></div></div>;
+  }
+  if(!me){
+    return <Login members={members} onLogin={login} reload={loadAll}/>;
+  }
+
+  return (
+    <div className="gc-shell">
+      <div className="gc-head">
+        <div className="gc-brand"><span className="fire">🔥</span>{APP_TITLE}</div>
+        <div className="gc-me"><span className="dot"/>{me.name}<button onClick={logout}>바꾸기</button></div>
+      </div>
+      <div className="gc-scroll">
+        {tab==="board" && <Board wk={wk} members={members} subs={subs} mission={mission} meId={meId}/>}
+        {tab==="upload" && <Upload wk={wk} me={me} mission={mission} subs={subs} reload={loadAll} showToast={showToast}/>}
+        {tab==="penalty" && <Penalty wk={wk} pwk={pwk} members={members} subs={subs}/>}
+        {tab==="admin" && <Admin wk={wk} subs={subs} mission={mission}
+          unlocked={adminUnlocked} unlock={unlockAdmin} lock={lockAdmin}
+          reload={loadAll} showToast={showToast}/>}
+      </div>
+      <nav className="gc-nav">
+        <button className={tab==="board"?"act":""} onClick={()=>setTab("board")}><span className="ic">🏆</span>보드</button>
+        <button className={tab==="upload"?"act":""} onClick={()=>setTab("upload")}><span className="ic">📸</span>인증</button>
+        <button className={tab==="penalty"?"act":""} onClick={()=>setTab("penalty")}><span className="ic">💸</span>벌금</button>
+        <button className={tab==="admin"?"act":""} onClick={()=>setTab("admin")}>
+          <span className="ic">🛡️</span>관리
+          {adminUnlocked && pending.length>0 && <span className="gc-navbadge">{pending.length}</span>}
+        </button>
+      </nav>
+      {toast && <div className="gc-toast">{toast}</div>}
+    </div>
+  );
+}
+
+/* ---------- 로그인 ---------- */
+function Login({members,onLogin,reload}){
+  const [mode,setMode]=useState("pick");
+  const [newName,setNewName]=useState("");
+  const [err,setErr]=useState("");
+  const [busy,setBusy]=useState(false);
+  const add=async()=>{
+    const nm=newName.trim(); if(!nm) return;
+    if(members.some(m=>m.name===nm)){ setErr("이미 있는 닉네임이에요. 위에서 선택해 주세요."); return; }
+    setBusy(true);
+    const {data,error}=await sb.from("members").insert({name:nm}).select().single();
+    setBusy(false);
+    if(error){ setErr("등록에 실패했어요. 다른 닉네임을 써보세요."); return; }
+    await reload(); onLogin(data.id);
+  };
+  return (
+    <div className="gc-shell"><div className="gc-center">
+      <div className="gc-logo">🔥</div>
+      <div className="gc-title">{APP_TITLE}</div>
+      <div className="gc-subtitle">누구로 참여하시나요?</div>
+      {mode==="pick" ? (
+        <>
+          <div className="gc-pick" style={{marginTop:18}}>
+            {members.length===0 && <div className="gc-empty">아직 멤버가 없어요. 아래에서 닉네임을 등록하세요.</div>}
+            {members.map(m=>(
+              <button key={m.id} className="gc-pickbtn" onClick={()=>onLogin(m.id)}>
+                <span>{m.name}</span><span className="r">선택</span>
+              </button>
+            ))}
+          </div>
+          <div className="gc-divider">또는</div>
+          <button className="gc-cta ghost" onClick={()=>{setMode("new");setErr("");}}>새 닉네임으로 참여</button>
+        </>
+      ) : (
+        <>
+          <div className="gc-field" style={{marginTop:6}}>
+            <label>닉네임</label>
+            <input className="gc-input" placeholder="예: 이근육" value={newName}
+              onChange={e=>{setNewName(e.target.value);setErr("");}}/>
+            {err && <div className="gc-hint" style={{color:"#C2402A"}}>{err}</div>}
+          </div>
+          <button className="gc-cta" style={{marginTop:16}} disabled={busy||!newName.trim()} onClick={add}>
+            {busy?"참여 중…":"참여하기"}</button>
+          <button className="gc-link" style={{marginTop:10}} onClick={()=>setMode("pick")}>← 목록에서 선택</button>
+        </>
+      )}
+    </div></div>
+  );
+}
+
+/* ---------- 보드 ---------- */
+function Board({wk,members,subs,mission,meId}){
+  const target=WEEKLY_TARGET;
+  const rows=members.map(m=>({...m,count:workoutCount(subs,m.id,wk)}))
+    .sort((a,b)=>b.count-a.count || a.name.localeCompare(b.name));
+  const totalDone=rows.reduce((s,r)=>s+Math.min(r.count,target),0);
+  const totalGoal=members.length*target;
+  const pct=totalGoal?Math.round(totalDone/totalGoal*100):0;
+  const medals=["🥇","🥈","🥉"];
+  const achieverIds=new Set(subs.filter(s=>s.type==="mission"&&s.status==="approved"&&s.week_key===wk).map(s=>s.member_id));
+  const achievers=members.filter(m=>achieverIds.has(m.id));
+
+  return (
+    <>
+      <div className="gc-hero">
+        <div className="wk">이번 주 · {weekLabel(wk)}</div>
+        <div className="big"><span className="n">{totalDone}</span><span className="of">/ {totalGoal}회</span></div>
+        <div className="cap">크루 전체가 목표의 {pct}%를 채웠어요. 승인된 인증만 집계됩니다.</div>
+        <div className="track"><div className="fill" style={{width:`${pct}%`}}/></div>
+      </div>
+
+      <div className="gc-sec"><h2>주간 랭킹</h2><span className="side">권장 {target}회</span></div>
+      <div className="gc-lb">
+        {rows.length===0 && <div className="gc-empty">아직 멤버가 없어요.</div>}
+        {rows.map((r,i)=>{
+          const done=r.count>=target; const isMe=r.id===meId;
+          return (
+            <div key={r.id} className={"gc-row"+(done?" done":"")}>
+              <div className={"gc-rank"+(i<3&&r.count>0?" medal":"")}>{i<3&&r.count>0?medals[i]:i+1}</div>
+              <div className="gc-who">
+                <div className="nm">{r.name}
+                  {isMe && <span className="gc-badge you">나</span>}
+                  {done && <span className="gc-badge g">달성 ✓</span>}
+                </div>
+                <div className="gc-pips">
+                  {Array.from({length:target}).map((_,k)=>(<span key={k} className={"gc-pip"+(k<r.count?" on":"")}/>))}
+                  {r.count>target && <span className="gc-pip extra on"/>}
+                </div>
+              </div>
+              <div className="gc-cnt"><div className="c">{r.count}</div><div className="t">/ {target}회</div></div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="gc-sec"><h2>이번 주 상금 미션</h2></div>
+      {mission ? (
+        <div className="gc-mission">
+          <div className="kk">🎯 이번 주 미션</div>
+          <h3>{mission.title}</h3>
+          {mission.description && <div className="desc">{mission.description}</div>}
+          {mission.prize && <div className="gc-prize">🏆 {mission.prize}</div>}
+          <div className="gc-ach">
+            <div className="lab">달성한 크루 ({achievers.length}명)</div>
+            {achievers.length ? (
+              <div className="gc-chips">{achievers.map(a=><span key={a.id} className="gc-chip">✅ {a.name}</span>)}</div>
+            ) : <div className="gc-mut">아직 달성자가 없어요. 미션 인증샷을 올려보세요!</div>}
+          </div>
+        </div>
+      ) : (
+        <div className="gc-empty">아직 이번 주 미션이 없어요.<br/>방장이 관리 탭에서 등록하면 여기에 걸립니다.</div>
+      )}
+      <div style={{height:8}}/>
+    </>
+  );
+}
+
+/* ---------- 인증하기 ---------- */
+function Upload({wk,me,mission,subs,reload,showToast}){
+  const [type,setType]=useState("workout");
+  const [cat,setCat]=useState("");
+  const [pic,setPic]=useState(null);
+  const [note,setNote]=useState("");
+  const [busy,setBusy]=useState(false);
+  const fileRef=useRef(null);
+  const mine=subs.filter(s=>s.member_id===me.id && s.week_key===wk);
+
+  const onFile=async e=>{
+    const f=e.target.files?.[0]; if(!f) return;
+    try{ setPic(await compressImage(f)); }catch{ showToast("이미지를 불러오지 못했어요."); }
+  };
+  const canSubmit=pic && (type==="mission"?!!mission:!!cat);
+
+  const submit=async()=>{
+    if(!canSubmit) return;
+    setBusy(true);
+    try{
+      const path=`${wk}/${crypto.randomUUID()}.jpg`;
+      const up=await sb.storage.from("proofs").upload(path,pic.blob,{contentType:"image/jpeg"});
+      if(up.error) throw up.error;
+      const {data:pub}=sb.storage.from("proofs").getPublicUrl(path);
+      const ins=await sb.from("submissions").insert({
+        member_id:me.id, member_name:me.name, type,
+        category: type==="workout"?cat:(mission?.title||"미션"),
+        note:note.trim(), image_url:pub.publicUrl, week_key:wk, status:"pending",
+      });
+      if(ins.error) throw ins.error;
+      setPic(null); setCat(""); setNote("");
+      if(fileRef.current) fileRef.current.value="";
+      await reload();
+      showToast("제출 완료! 방장 승인을 기다려주세요 💪");
+    }catch(err){ showToast("업로드에 실패했어요. 잠시 후 다시 시도해 주세요."); }
+    setBusy(false);
+  };
+
+  const del=async s=>{
+    if(!window.confirm("이 인증을 삭제할까요?")) return;
+    await sb.from("submissions").delete().eq("id",s.id);
+    if(s.image_url){ const i=s.image_url.indexOf("/proofs/");
+      if(i>=0) await sb.storage.from("proofs").remove([s.image_url.slice(i+8)]); }
+    await reload(); showToast("삭제했어요");
+  };
+
+  return (
+    <>
+      <div className="gc-sec" style={{marginTop:16}}><h2>인증하기</h2></div>
+      <div className="gc-seg">
+        <button className={type==="workout"?"act":""} onClick={()=>setType("workout")}>운동 인증</button>
+        <button className={type==="mission"?"act":""} onClick={()=>setType("mission")}>미션 인증</button>
+      </div>
+
+      {type==="workout" ? (
+        <>
+          <div className="gc-sec"><h2 style={{fontSize:14}}>운동 종목</h2></div>
+          <div className="gc-catgrid">
+            {CATEGORIES.map(c=>(<button key={c} className={"gc-cat"+(cat===c?" on":"")} onClick={()=>setCat(c)}>{c}</button>))}
+          </div>
+        </>
+      ) : (
+        <div style={{marginTop:14}}>
+          {mission ? (
+            <div className="gc-mission">
+              <div className="kk">🎯 이번 주 미션</div>
+              <h3 style={{fontSize:17}}>{mission.title}</h3>
+              {mission.prize && <div className="gc-prize" style={{marginTop:10}}>🏆 {mission.prize}</div>}
+            </div>
+          ) : <div className="gc-empty">이번 주 미션이 아직 없어요. 방장이 등록하면 인증할 수 있어요.</div>}
+        </div>
+      )}
+
+      <div className="gc-sec"><h2 style={{fontSize:14}}>인증샷</h2></div>
+      {pic ? (
+        <div className="gc-preview">
+          <img src={pic.url} alt="인증샷 미리보기"/>
+          <button className="x" onClick={()=>{setPic(null); if(fileRef.current)fileRef.current.value="";}}>✕</button>
+        </div>
+      ) : (
+        <button className="gc-drop" onClick={()=>fileRef.current?.click()}>
+          <span className="ic">📷</span>사진 찍기 또는 앨범에서 선택
+        </button>
+      )}
+      <input ref={fileRef} type="file" accept="image/*" capture="environment" style={{display:"none"}} onChange={onFile}/>
+
+      <textarea className="gc-note" style={{marginTop:12}} rows={2}
+        placeholder="한마디 남기기 (선택)" value={note} onChange={e=>setNote(e.target.value)}/>
+
+      <button className="gc-cta" style={{marginTop:14}} disabled={!canSubmit||busy} onClick={submit}>
+        {busy?"올리는 중…":"인증 제출하기"}</button>
+      {type==="workout" && !cat && pic && <div className="gc-hint">운동 종목을 선택해 주세요.</div>}
+
+      <div className="gc-sec"><h2>이번 주 내 인증</h2></div>
+      {mine.length===0 ? (
+        <div className="gc-empty">아직 이번 주 인증이 없어요. 첫 인증을 올려보세요!</div>
+      ) : (
+        <div className="gc-lb">
+          {mine.map(s=>(
+            <div key={s.id} className="gc-item">
+              <img className="gc-thumb" src={s.image_url} alt=""/>
+              <div className="body">
+                <div className="t1">{s.type==="mission"?"🎯 ":"🏋️ "}{s.category}</div>
+                <div className="t2">{timeAgo(s.created_at)}{s.note?` · ${s.note}`:""}</div>
+              </div>
+              <span className={"gc-st "+(s.status==="approved"?"a":s.status==="rejected"?"r":"p")}>
+                {s.status==="approved"?"승인됨":s.status==="rejected"?"반려됨":"대기중"}</span>
+              {s.status!=="approved" && <button className="gc-del" onClick={()=>del(s)}>✕</button>}
+            </div>
+          ))}
+        </div>
+      )}
+      <div style={{height:8}}/>
+    </>
+  );
+}
+
+/* ---------- 벌금보드 ---------- */
+function Penalty({wk,pwk,members,subs}){
+  const [view,setView]=useState("this"); // this | last
+  const target=WEEKLY_TARGET;
+  const wkStart=new Date(wk+"T00:00:00");
+
+  // 이번 주: 아직 3회 못 채운 사람 (진행 중)
+  const thisMiss=members.map(m=>({...m,count:workoutCount(subs,m.id,wk)}))
+    .filter(r=>r.count<target).sort((a,b)=>a.count-b.count || a.name.localeCompare(b.name));
+
+  // 지난주: 마감된 확정 벌금 (지난주에 이미 있던 멤버만 대상)
+  const lastMembers=members.filter(m=>new Date(m.created_at)<wkStart);
+  const lastMiss=lastMembers.map(m=>({...m,count:workoutCount(subs,m.id,pwk)}))
+    .filter(r=>r.count<target).sort((a,b)=>a.count-b.count || a.name.localeCompare(b.name));
+  const hadLastWeek = lastMembers.length>0 && subs.some(s=>s.week_key===pwk);
+
+  return (
+    <>
+      <div className="gc-sec" style={{marginTop:16}}><h2>벌금보드</h2><span className="side">미달성 {target}회</span></div>
+      <div className="gc-subtabs">
+        <button className={view==="this"?"act":""} onClick={()=>setView("this")}>이번 주 (진행 중)</button>
+        <button className={view==="last"?"act":""} onClick={()=>setView("last")}>지난주 (확정)</button>
+      </div>
+
+      {view==="this" ? (
+        <>
+          <div className="gc-sum">
+            <div className="l">이번 주 마감까지 3회를 못 채우면 벌금</div>
+            <div className="r">{PENALTY_TEXT}</div>
+          </div>
+          {thisMiss.length===0 ? (
+            <div className="gc-empty">이번 주 전원이 목표를 채웠어요! 🎉</div>
+          ) : (
+            <div className="gc-lb">
+              {thisMiss.map(r=>(
+                <div key={r.id} className="gc-penrow">
+                  <div className="who">{r.name}<div className="s">현재 {r.count}/{target}회 · {target-r.count}회 부족</div></div>
+                  <span className="gc-pentag warn">위험</span>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="gc-hint" style={{marginTop:12}}>
+            이번 주는 아직 진행 중이라 마감(일요일 자정) 전까지 3회를 채우면 명단에서 빠집니다.
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="gc-sum">
+            <div className="l">지난주 벌금 인원 · {weekLabel(pwk)}</div>
+            <div className="r">{lastMiss.length}명</div>
+          </div>
+          {!hadLastWeek ? (
+            <div className="gc-empty">아직 지난주 기록이 없어요.</div>
+          ) : lastMiss.length===0 ? (
+            <div className="gc-empty">지난주엔 전원 달성! 벌금 없음 🎉</div>
+          ) : (
+            <div className="gc-lb">
+              {lastMiss.map(r=>(
+                <div key={r.id} className="gc-penrow miss">
+                  <div className="who">{r.name}<div className="s">{r.count}/{target}회 · 미달성</div></div>
+                  <span className="gc-pentag">{PENALTY_TEXT}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+      <div style={{height:8}}/>
+    </>
+  );
+}
+
+/* ---------- 관리 (방장) ---------- */
+function Admin({wk,subs,mission,unlocked,unlock,lock,reload,showToast}){
+  const [pin,setPin]=useState("");
+  const [err,setErr]=useState("");
+
+  if(!unlocked){
+    return (
+      <div style={{paddingTop:40}}>
+        <div className="gc-logo">🛡️</div>
+        <div className="gc-title">방장 전용</div>
+        <div className="gc-subtitle">인증 승인과 미션 관리를 위해 PIN을 입력하세요.</div>
+        <div className="gc-field" style={{maxWidth:300,margin:"18px auto 0"}}>
+          <input className="gc-input" inputMode="numeric" maxLength={4} placeholder="4자리 PIN"
+            value={pin} onChange={e=>{setPin(e.target.value.replace(/\D/g,"").slice(0,4));setErr("");}}/>
+          {err && <div className="gc-hint" style={{color:"#C2402A"}}>{err}</div>}
+          <button className="gc-cta" style={{marginTop:14}} disabled={pin.length!==4}
+            onClick={()=>{ if(pin===ADMIN_PIN){unlock();} else setErr("PIN이 맞지 않아요."); }}>잠금 해제</button>
+        </div>
+      </div>
+    );
+  }
+
+  const pending=subs.filter(s=>s.status==="pending")
+    .sort((a,b)=>new Date(a.created_at)-new Date(b.created_at));
+
+  const decide=async(s,status)=>{
+    const {error}=await sb.from("submissions").update({status}).eq("id",s.id);
+    if(error){ showToast("처리에 실패했어요."); return; }
+    await reload();
+    showToast(status==="approved"?"승인했어요 ✅":"반려했어요");
+  };
+
+  return (
+    <>
+      <div className="gc-sec" style={{marginTop:16}}>
+        <h2>승인 대기</h2>
+        <button className="gc-link" onClick={lock}>잠그기</button>
+      </div>
+      {pending.length===0 ? (
+        <div className="gc-empty">대기 중인 인증이 없어요. 깔끔하네요! 👍</div>
+      ) : (
+        <div className="gc-lb">
+          {pending.map(s=>(
+            <div key={s.id} className="gc-item" style={{flexDirection:"column",alignItems:"stretch"}}>
+              <div style={{display:"flex",gap:11,alignItems:"center"}}>
+                <img className="gc-thumb" src={s.image_url} alt=""/>
+                <div className="body">
+                  <div className="t1">{s.member_name} · {s.type==="mission"?"🎯 ":"🏋️ "}{s.category}
+                    {s.week_key!==wk && <span className="gc-st r">지난주</span>}
+                  </div>
+                  <div className="t2">{timeAgo(s.created_at)}{s.note?` · ${s.note}`:""}</div>
+                </div>
+              </div>
+              <div className="gc-qbtns">
+                <button className="ok" onClick={()=>decide(s,"approved")}>승인</button>
+                <button className="no" onClick={()=>decide(s,"rejected")}>반려</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      <MissionEditor wk={wk} mission={mission} reload={reload} showToast={showToast}/>
+    </>
+  );
+}
+
+function MissionEditor({wk,mission,reload,showToast}){
+  const [title,setTitle]=useState("");
+  const [desc,setDesc]=useState("");
+  const [prize,setPrize]=useState("");
+  const [busy,setBusy]=useState(false);
+  useEffect(()=>{ setTitle(mission?.title||""); setDesc(mission?.description||""); setPrize(mission?.prize||""); },
+    [mission?.title,mission?.description,mission?.prize]);
+  const save=async()=>{
+    if(!title.trim()) return;
+    setBusy(true);
+    const {error}=await sb.from("missions").upsert({
+      week_key:wk, title:title.trim(), description:desc.trim(), prize:prize.trim(),
+      updated_at:new Date().toISOString(),
+    });
+    setBusy(false);
+    if(error){ showToast("저장에 실패했어요."); return; }
+    await reload(); showToast("이번 주 미션을 등록했어요 🎯");
+  };
+  return (
+    <>
+      <div className="gc-sec"><h2>이번 주 상금 미션</h2><span className="side">{weekLabel(wk)}</span></div>
+      <div className="gc-field" style={{marginTop:0}}>
+        <label>미션 제목</label>
+        <input className="gc-input" placeholder="예: 주 4회 이상 인증하기" value={title} onChange={e=>setTitle(e.target.value)}/>
+      </div>
+      <div className="gc-field">
+        <label>설명 (선택)</label>
+        <textarea className="gc-note" rows={3} placeholder="미션 조건이나 안내" value={desc} onChange={e=>setDesc(e.target.value)}/>
+      </div>
+      <div className="gc-field">
+        <label>상금 / 보상 (선택)</label>
+        <input className="gc-input" placeholder="예: 스타벅스 기프티콘" value={prize} onChange={e=>setPrize(e.target.value)}/>
+      </div>
+      <button className="gc-cta" style={{marginTop:16}} disabled={!title.trim()||busy} onClick={save}>
+        {busy?"저장 중…":mission?"미션 수정하기":"미션 등록하기"}</button>
+      <div style={{height:8}}/>
+    </>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
