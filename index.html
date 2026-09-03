@@ -111,12 +111,14 @@ input,textarea,select{font-family:inherit;}
   padding:15px;border-radius:15px;box-shadow:0 6px 16px rgba(255,75,43,.28);}
 .gc-cta:disabled{background:#D6D9DF;color:#fff;box-shadow:none;}
 .gc-cta.ghost{background:var(--surface);color:var(--ink);border:1.5px solid var(--line);box-shadow:none;}
+.gc-photo-btns{display:flex;gap:8px;}
+.gc-photo-btns .gc-drop{flex:1;padding:18px 12px;}
 
 .gc-item{background:var(--surface);border:1px solid var(--line);border-radius:15px;
   padding:11px;display:flex;gap:11px;align-items:center;}
 .gc-thumb{width:56px;height:56px;border-radius:11px;object-fit:cover;flex:none;background:#EEF0F3;}
 .gc-item .body{flex:1;min-width:0;}
-.gc-item .body .t1{font-weight:800;font-size:14px;display:flex;gap:6px;align-items:center;}
+.gc-item .body .t1{font-weight:800;font-size:14px;display:flex;gap:6px;align-items:center;flex-wrap:wrap;}
 .gc-item .body .t2{font-size:12.5px;color:var(--muted);margin-top:3px;}
 .gc-del{flex:none;color:var(--muted);font-size:15px;font-weight:800;padding:8px;border-radius:10px;}
 
@@ -126,8 +128,12 @@ input,textarea,select{font-family:inherit;}
 .gc-st.r{background:#FBE9E7;color:#C2402A;}
 .gc-qbtns{display:flex;gap:8px;margin-top:10px;}
 .gc-qbtns button{flex:1;padding:10px;border-radius:11px;font-weight:800;font-size:13.5px;}
+.gc-qbtns button:disabled{opacity:.5;}
 .gc-qbtns .ok{background:var(--success);color:#fff;}
 .gc-qbtns .no{background:#F3F4F6;color:#C2402A;}
+
+.gc-card{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:14px;margin-bottom:10px;}
+.gc-card .cap{font-weight:800;font-size:13px;color:var(--muted);margin-bottom:8px;}
 
 .gc-sum{background:var(--iron);color:#fff;border-radius:16px;padding:14px 16px;
   display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;}
@@ -204,6 +210,7 @@ const APP_TITLE = "GSSH Health";      // 모임 이름
 const WEEKLY_TARGET = 3;             // 주간 권장 횟수
 const ADMIN_PIN = "9876";            // 방장만 아는 4자리 PIN (꼭 바꾸세요)
 const PENALTY_TEXT = "5,000원";      // 미달성 시 벌금 (원하는 대로: "치킨 1마리" 등)
+const MAX_MISSIONS = 2;              // 한 주 미션 최대 개수
 /* ============================================================ */
 
 const { useState, useEffect, useRef, useCallback } = React;
@@ -251,17 +258,45 @@ function compressImage(file, maxSize=1000, quality=0.72){
     reader.onerror=reject; reader.readAsDataURL(file);
   });
 }
-// 승인된 운동 인증 횟수
 function workoutCount(subs, memberId, wk){
   return subs.filter(s=>s.member_id===memberId && s.type==="workout" && s.status==="approved" && s.week_key===wk).length;
+}
+
+/* ---------- 오래된 사진 자동 정리 (2주 지난 주 폴더 삭제) ---------- */
+const CLEAN_KEY="gymcrew:lastclean";
+async function cleanupOldPhotos(wk){
+  if(!sb) return;
+  const cutoff = prevWeekKey(wk); // 이번 주 + 지난주는 보관, 그 이전 주 폴더만 삭제
+  try{
+    const { data: folders } = await sb.storage.from("proofs").list("", { limit: 1000 });
+    if(!folders) return;
+    for(const f of folders){
+      const name = f.name;
+      // 주 폴더 이름은 'YYYY-MM-DD' 형식. 폴더 항목은 id 가 null.
+      if(f.id===null && /^\d{4}-\d{2}-\d{2}$/.test(name) && name < cutoff){
+        const { data: files } = await sb.storage.from("proofs").list(name, { limit: 1000 });
+        if(files && files.length){
+          await sb.storage.from("proofs").remove(files.map(x=>`${name}/${x.name}`));
+        }
+      }
+    }
+  }catch(e){ /* 정리는 실패해도 앱 동작에 영향 없음 */ }
+}
+async function maybeCleanup(wk){
+  try{
+    const today = new Date().toISOString().slice(0,10);
+    if(localStorage.getItem(CLEAN_KEY)===today) return; // 기기당 하루 1회만
+    localStorage.setItem(CLEAN_KEY, today);
+    await cleanupOldPhotos(wk);
+  }catch(e){ /* 무시 */ }
 }
 
 /* ============================================================ */
 function App(){
   const [ready,setReady]=useState(false);
   const [members,setMembers]=useState([]);
-  const [subs,setSubs]=useState([]);          // 이번주 + 지난주
-  const [mission,setMission]=useState(null);
+  const [subs,setSubs]=useState([]);
+  const [missions,setMissions]=useState([]);   // 배열 (0~2개)
   const [meId,setMeId]=useState(localStorage.getItem(ME_KEY)||null);
   const [tab,setTab]=useState("board");
   const [toast,setToast]=useState("");
@@ -279,14 +314,14 @@ function App(){
     const [mem,sub,mis]=await Promise.all([
       sb.from("members").select("*").order("created_at"),
       sb.from("submissions").select("*").in("week_key",[wk,pwk]).order("created_at",{ascending:false}),
-      sb.from("missions").select("*").eq("week_key",wk).maybeSingle(),
+      sb.from("missions").select("*").eq("week_key",wk).order("updated_at",{ascending:true}),
     ]);
     if(mem.data) setMembers(mem.data);
     if(sub.data) setSubs(sub.data);
-    setMission(mis.data||null);
+    if(mis.data) setMissions(mis.data);
   },[wk,pwk]);
 
-  useEffect(()=>{ (async()=>{ await loadAll(); setReady(true); })(); },[loadAll]);
+  useEffect(()=>{ (async()=>{ await loadAll(); setReady(true); maybeCleanup(wk); })(); },[loadAll]);
   useEffect(()=>{
     if(!ready||!sb) return;
     const iv=setInterval(loadAll,12000);
@@ -323,10 +358,10 @@ function App(){
         <div className="gc-me"><span className="dot"/>{me.name}<button onClick={logout}>바꾸기</button></div>
       </div>
       <div className="gc-scroll">
-        {tab==="board" && <Board wk={wk} members={members} subs={subs} mission={mission} meId={meId}/>}
-        {tab==="upload" && <Upload wk={wk} me={me} mission={mission} subs={subs} reload={loadAll} showToast={showToast}/>}
+        {tab==="board" && <Board wk={wk} members={members} subs={subs} missions={missions} meId={meId}/>}
+        {tab==="upload" && <Upload wk={wk} me={me} missions={missions} subs={subs} reload={loadAll} showToast={showToast}/>}
         {tab==="penalty" && <Penalty wk={wk} pwk={pwk} members={members} subs={subs}/>}
-        {tab==="admin" && <Admin wk={wk} subs={subs} mission={mission}
+        {tab==="admin" && <Admin wk={wk} members={members} subs={subs} missions={missions}
           unlocked={adminUnlocked} unlock={unlockAdmin} lock={lockAdmin}
           reload={loadAll} showToast={showToast}/>}
       </div>
@@ -395,7 +430,7 @@ function Login({members,onLogin,reload}){
 }
 
 /* ---------- 보드 ---------- */
-function Board({wk,members,subs,mission,meId}){
+function Board({wk,members,subs,missions,meId}){
   const target=WEEKLY_TARGET;
   const rows=members.map(m=>({...m,count:workoutCount(subs,m.id,wk)}))
     .sort((a,b)=>b.count-a.count || a.name.localeCompare(b.name));
@@ -403,8 +438,11 @@ function Board({wk,members,subs,mission,meId}){
   const totalGoal=members.length*target;
   const pct=totalGoal?Math.round(totalDone/totalGoal*100):0;
   const medals=["🥇","🥈","🥉"];
-  const achieverIds=new Set(subs.filter(s=>s.type==="mission"&&s.status==="approved"&&s.week_key===wk).map(s=>s.member_id));
-  const achievers=members.filter(m=>achieverIds.has(m.id));
+
+  const achieversFor=(mis)=>{
+    const ids=new Set(subs.filter(s=>s.type==="mission"&&s.status==="approved"&&s.week_key===wk&&s.category===mis.title).map(s=>s.member_id));
+    return members.filter(m=>ids.has(m.id));
+  };
 
   return (
     <>
@@ -439,43 +477,49 @@ function Board({wk,members,subs,mission,meId}){
         })}
       </div>
 
-      <div className="gc-sec"><h2>이번 주 상금 미션</h2></div>
-      {mission ? (
-        <div className="gc-mission">
-          <div className="kk">🎯 이번 주 미션</div>
-          <h3>{mission.title}</h3>
-          {mission.description && <div className="desc">{mission.description}</div>}
-          {mission.prize && <div className="gc-prize">🏆 {mission.prize}</div>}
-          <div className="gc-ach">
-            <div className="lab">달성한 크루 ({achievers.length}명)</div>
-            {achievers.length ? (
-              <div className="gc-chips">{achievers.map(a=><span key={a.id} className="gc-chip">✅ {a.name}</span>)}</div>
-            ) : <div className="gc-mut">아직 달성자가 없어요. 미션 인증샷을 올려보세요!</div>}
-          </div>
-        </div>
-      ) : (
+      <div className="gc-sec"><h2>이번 주 상금 미션</h2><span className="side">{missions.length}/{MAX_MISSIONS}</span></div>
+      {missions.length===0 ? (
         <div className="gc-empty">아직 이번 주 미션이 없어요.<br/>방장이 관리 탭에서 등록하면 여기에 걸립니다.</div>
-      )}
+      ) : missions.map(mis=>{
+        const achievers=achieversFor(mis);
+        return (
+          <div key={mis.id} className="gc-mission" style={{marginBottom:10}}>
+            <div className="kk">🎯 이번 주 미션</div>
+            <h3>{mis.title}</h3>
+            {mis.description && <div className="desc">{mis.description}</div>}
+            {mis.prize && <div className="gc-prize">🏆 {mis.prize}</div>}
+            <div className="gc-ach">
+              <div className="lab">달성한 크루 ({achievers.length}명)</div>
+              {achievers.length ? (
+                <div className="gc-chips">{achievers.map(a=><span key={a.id} className="gc-chip">✅ {a.name}</span>)}</div>
+              ) : <div className="gc-mut">아직 달성자가 없어요.</div>}
+            </div>
+          </div>
+        );
+      })}
       <div style={{height:8}}/>
     </>
   );
 }
 
 /* ---------- 인증하기 ---------- */
-function Upload({wk,me,mission,subs,reload,showToast}){
+function Upload({wk,me,missions,subs,reload,showToast}){
   const [type,setType]=useState("workout");
   const [cat,setCat]=useState("");
+  const [missionId,setMissionId]=useState(null);
   const [pic,setPic]=useState(null);
   const [note,setNote]=useState("");
   const [busy,setBusy]=useState(false);
   const fileRef=useRef(null);
   const mine=subs.filter(s=>s.member_id===me.id && s.week_key===wk);
 
+  const chosenMission = missions.length===1 ? missions[0] : (missions.find(m=>m.id===missionId)||null);
+
   const onFile=async e=>{
     const f=e.target.files?.[0]; if(!f) return;
     try{ setPic(await compressImage(f)); }catch{ showToast("이미지를 불러오지 못했어요."); }
   };
-  const canSubmit=pic && (type==="mission"?!!mission:!!cat);
+  const canSubmit=pic && (type==="mission"?!!chosenMission:!!cat);
 
   const submit=async()=>{
     if(!canSubmit) return;
@@ -487,11 +531,11 @@ function Upload({wk,me,mission,subs,reload,showToast}){
       const {data:pub}=sb.storage.from("proofs").getPublicUrl(path);
       const ins=await sb.from("submissions").insert({
         member_id:me.id, member_name:me.name, type,
-        category: type==="workout"?cat:(mission?.title||"미션"),
+        category: type==="workout"?cat:chosenMission.title,
         note:note.trim(), image_url:pub.publicUrl, week_key:wk, status:"pending",
       });
       if(ins.error) throw ins.error;
-      setPic(null); setCat(""); setNote("");
+      setPic(null); setCat(""); setNote(""); setMissionId(null);
       if(fileRef.current) fileRef.current.value="";
       await reload();
       showToast("제출 완료! 방장 승인을 기다려주세요 💪");
@@ -524,13 +568,29 @@ function Upload({wk,me,mission,subs,reload,showToast}){
         </>
       ) : (
         <div style={{marginTop:14}}>
-          {mission ? (
-            <div className="gc-mission">
-              <div className="kk">🎯 이번 주 미션</div>
-              <h3 style={{fontSize:17}}>{mission.title}</h3>
-              {mission.prize && <div className="gc-prize" style={{marginTop:10}}>🏆 {mission.prize}</div>}
-            </div>
-          ) : <div className="gc-empty">이번 주 미션이 아직 없어요. 방장이 등록하면 인증할 수 있어요.</div>}
+          {missions.length===0 ? (
+            <div className="gc-empty">이번 주 미션이 아직 없어요. 방장이 등록하면 인증할 수 있어요.</div>
+          ) : (
+            <>
+              {missions.length>1 && (
+                <>
+                  <div className="gc-sec" style={{marginTop:4}}><h2 style={{fontSize:14}}>어떤 미션인가요?</h2></div>
+                  <div className="gc-catgrid">
+                    {missions.map(m=>(
+                      <button key={m.id} className={"gc-cat"+(missionId===m.id?" on":"")} onClick={()=>setMissionId(m.id)}>{m.title}</button>
+                    ))}
+                  </div>
+                </>
+              )}
+              {chosenMission && (
+                <div className="gc-mission" style={{marginTop:14}}>
+                  <div className="kk">🎯 미션</div>
+                  <h3 style={{fontSize:17}}>{chosenMission.title}</h3>
+                  {chosenMission.prize && <div className="gc-prize" style={{marginTop:10}}>🏆 {chosenMission.prize}</div>}
+                </div>
+              )}
+            </>
+          )}
         </div>
       )}
 
@@ -541,11 +601,16 @@ function Upload({wk,me,mission,subs,reload,showToast}){
           <button className="x" onClick={()=>{setPic(null); if(fileRef.current)fileRef.current.value="";}}>✕</button>
         </div>
       ) : (
-        <button className="gc-drop" onClick={()=>fileRef.current?.click()}>
-          <span className="ic">📷</span>사진 찍기 또는 앨범에서 선택
-        </button>
+        <div className="gc-photo-btns">
+          <button className="gc-drop" onClick={()=>{ if(fileRef.current){ fileRef.current.removeAttribute("capture"); fileRef.current.click(); } }}>
+            <span className="ic">🖼️</span>앨범에서 선택
+          </button>
+          <button className="gc-drop" onClick={()=>{ if(fileRef.current){ fileRef.current.setAttribute("capture","environment"); fileRef.current.click(); } }}>
+            <span className="ic">📷</span>사진 찍기
+          </button>
+        </div>
       )}
-      <input ref={fileRef} type="file" accept="image/*" capture="environment" style={{display:"none"}} onChange={onFile}/>
+      <input ref={fileRef} type="file" accept="image/*" style={{display:"none"}} onChange={onFile}/>
 
       <textarea className="gc-note" style={{marginTop:12}} rows={2}
         placeholder="한마디 남기기 (선택)" value={note} onChange={e=>setNote(e.target.value)}/>
@@ -553,6 +618,7 @@ function Upload({wk,me,mission,subs,reload,showToast}){
       <button className="gc-cta" style={{marginTop:14}} disabled={!canSubmit||busy} onClick={submit}>
         {busy?"올리는 중…":"인증 제출하기"}</button>
       {type==="workout" && !cat && pic && <div className="gc-hint">운동 종목을 선택해 주세요.</div>}
+      {type==="mission" && missions.length>1 && !chosenMission && pic && <div className="gc-hint">완료한 미션을 선택해 주세요.</div>}
 
       <div className="gc-sec"><h2>이번 주 내 인증</h2></div>
       {mine.length===0 ? (
@@ -580,15 +646,13 @@ function Upload({wk,me,mission,subs,reload,showToast}){
 
 /* ---------- 벌금보드 ---------- */
 function Penalty({wk,pwk,members,subs}){
-  const [view,setView]=useState("this"); // this | last
+  const [view,setView]=useState("this");
   const target=WEEKLY_TARGET;
   const wkStart=new Date(wk+"T00:00:00");
 
-  // 이번 주: 아직 3회 못 채운 사람 (진행 중)
   const thisMiss=members.map(m=>({...m,count:workoutCount(subs,m.id,wk)}))
     .filter(r=>r.count<target).sort((a,b)=>a.count-b.count || a.name.localeCompare(b.name));
 
-  // 지난주: 마감된 확정 벌금 (지난주에 이미 있던 멤버만 대상)
   const lastMembers=members.filter(m=>new Date(m.created_at)<wkStart);
   const lastMiss=lastMembers.map(m=>({...m,count:workoutCount(subs,m.id,pwk)}))
     .filter(r=>r.count<target).sort((a,b)=>a.count-b.count || a.name.localeCompare(b.name));
@@ -652,7 +716,7 @@ function Penalty({wk,pwk,members,subs}){
 }
 
 /* ---------- 관리 (방장) ---------- */
-function Admin({wk,subs,mission,unlocked,unlock,lock,reload,showToast}){
+function Admin({wk,members,subs,missions,unlocked,unlock,lock,reload,showToast}){
   const [pin,setPin]=useState("");
   const [err,setErr]=useState("");
 
@@ -661,7 +725,7 @@ function Admin({wk,subs,mission,unlocked,unlock,lock,reload,showToast}){
       <div style={{paddingTop:40}}>
         <div className="gc-logo">🛡️</div>
         <div className="gc-title">방장 전용</div>
-        <div className="gc-subtitle">인증 승인과 미션 관리를 위해 PIN을 입력하세요.</div>
+        <div className="gc-subtitle">인증 승인과 미션·멤버 관리를 위해 PIN을 입력하세요.</div>
         <div className="gc-field" style={{maxWidth:300,margin:"18px auto 0"}}>
           <input className="gc-input" inputMode="numeric" maxLength={4} placeholder="4자리 PIN"
             value={pin} onChange={e=>{setPin(e.target.value.replace(/\D/g,"").slice(0,4));setErr("");}}/>
@@ -712,46 +776,97 @@ function Admin({wk,subs,mission,unlocked,unlock,lock,reload,showToast}){
           ))}
         </div>
       )}
-      <MissionEditor wk={wk} mission={mission} reload={reload} showToast={showToast}/>
+
+      <MissionManager wk={wk} missions={missions} reload={reload} showToast={showToast}/>
+      <MemberManager members={members} reload={reload} showToast={showToast}/>
     </>
   );
 }
 
-function MissionEditor({wk,mission,reload,showToast}){
-  const [title,setTitle]=useState("");
-  const [desc,setDesc]=useState("");
-  const [prize,setPrize]=useState("");
+/* ---------- 미션 관리 (최대 2개) ---------- */
+function MissionManager({wk,missions,reload,showToast}){
+  return (
+    <>
+      <div className="gc-sec"><h2>이번 주 상금 미션</h2><span className="side">최대 {MAX_MISSIONS}개 · {weekLabel(wk)}</span></div>
+      {missions.map((m,i)=>(<MissionSlot key={m.id} wk={wk} mission={m} index={i+1} reload={reload} showToast={showToast}/>))}
+      {missions.length<MAX_MISSIONS && (
+        <MissionSlot key={"new-"+missions.length} wk={wk} mission={null} index={missions.length+1} reload={reload} showToast={showToast}/>
+      )}
+    </>
+  );
+}
+function MissionSlot({wk,mission,index,reload,showToast}){
+  const [title,setTitle]=useState(mission?.title||"");
+  const [desc,setDesc]=useState(mission?.description||"");
+  const [prize,setPrize]=useState(mission?.prize||"");
   const [busy,setBusy]=useState(false);
   useEffect(()=>{ setTitle(mission?.title||""); setDesc(mission?.description||""); setPrize(mission?.prize||""); },
-    [mission?.title,mission?.description,mission?.prize]);
+    [mission?.id,mission?.title,mission?.description,mission?.prize]);
   const save=async()=>{
     if(!title.trim()) return;
     setBusy(true);
-    const {error}=await sb.from("missions").upsert({
-      week_key:wk, title:title.trim(), description:desc.trim(), prize:prize.trim(),
-      updated_at:new Date().toISOString(),
-    });
+    let res;
+    if(mission){
+      res=await sb.from("missions").update({title:title.trim(),description:desc.trim(),prize:prize.trim(),updated_at:new Date().toISOString()}).eq("id",mission.id);
+    } else {
+      res=await sb.from("missions").insert({week_key:wk,title:title.trim(),description:desc.trim(),prize:prize.trim(),updated_at:new Date().toISOString()});
+    }
     setBusy(false);
-    if(error){ showToast("저장에 실패했어요."); return; }
-    await reload(); showToast("이번 주 미션을 등록했어요 🎯");
+    if(res.error){ showToast("저장에 실패했어요."); return; }
+    if(!mission){ setTitle("");setDesc("");setPrize(""); }
+    await reload(); showToast(mission?"미션을 수정했어요 🎯":"미션을 추가했어요 🎯");
+  };
+  const del=async()=>{
+    if(!mission) return;
+    if(!window.confirm("이 미션을 삭제할까요?")) return;
+    const {error}=await sb.from("missions").delete().eq("id",mission.id);
+    if(error){ showToast("삭제에 실패했어요."); return; }
+    await reload(); showToast("미션을 삭제했어요");
+  };
+  return (
+    <div className="gc-card">
+      <div className="cap">{mission?`미션 ${index}`:"새 미션 추가"}</div>
+      <div className="gc-field" style={{marginTop:0}}>
+        <label>제목</label>
+        <input className="gc-input" placeholder="예: 주 4회 이상 인증" value={title} onChange={e=>setTitle(e.target.value)}/>
+      </div>
+      <div className="gc-field"><label>설명 (선택)</label>
+        <textarea className="gc-note" rows={2} value={desc} onChange={e=>setDesc(e.target.value)}/></div>
+      <div className="gc-field"><label>상금/보상 (선택)</label>
+        <input className="gc-input" placeholder="예: 스타벅스 기프티콘" value={prize} onChange={e=>setPrize(e.target.value)}/></div>
+      <div className="gc-qbtns" style={{marginTop:12}}>
+        <button className="ok" disabled={!title.trim()||busy} onClick={save}>{mission?"수정":"추가"}</button>
+        {mission && <button className="no" onClick={del}>삭제</button>}
+      </div>
+    </div>
+  );
+}
+
+/* ---------- 멤버 관리 (프로필 삭제) ---------- */
+function MemberManager({members,reload,showToast}){
+  const del=async(m)=>{
+    if(!window.confirm(`${m.name} 님의 프로필을 삭제할까요?\n이 회원의 인증 기록과 카운트도 함께 사라집니다.`)) return;
+    const {error}=await sb.from("members").delete().eq("id",m.id);
+    if(error){ showToast("삭제에 실패했어요."); return; }
+    await reload(); showToast("프로필을 삭제했어요");
   };
   return (
     <>
-      <div className="gc-sec"><h2>이번 주 상금 미션</h2><span className="side">{weekLabel(wk)}</span></div>
-      <div className="gc-field" style={{marginTop:0}}>
-        <label>미션 제목</label>
-        <input className="gc-input" placeholder="예: 주 4회 이상 인증하기" value={title} onChange={e=>setTitle(e.target.value)}/>
-      </div>
-      <div className="gc-field">
-        <label>설명 (선택)</label>
-        <textarea className="gc-note" rows={3} placeholder="미션 조건이나 안내" value={desc} onChange={e=>setDesc(e.target.value)}/>
-      </div>
-      <div className="gc-field">
-        <label>상금 / 보상 (선택)</label>
-        <input className="gc-input" placeholder="예: 스타벅스 기프티콘" value={prize} onChange={e=>setPrize(e.target.value)}/>
-      </div>
-      <button className="gc-cta" style={{marginTop:16}} disabled={!title.trim()||busy} onClick={save}>
-        {busy?"저장 중…":mission?"미션 수정하기":"미션 등록하기"}</button>
+      <div className="gc-sec"><h2>멤버 관리</h2><span className="side">{members.length}명</span></div>
+      {members.length===0 ? (
+        <div className="gc-empty">아직 멤버가 없어요.</div>
+      ) : (
+        <div className="gc-lb">
+          {members.map(m=>(
+            <div key={m.id} className="gc-item">
+              <div className="body"><div className="t1">{m.name}</div>
+                <div className="t2">참여 {timeAgo(m.created_at)}</div></div>
+              <button className="gc-st r" onClick={()=>del(m)}>삭제</button>
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="gc-hint" style={{marginTop:12}}>프로필을 삭제하면 그 회원의 인증 기록과 카운트도 함께 삭제됩니다.</div>
       <div style={{height:8}}/>
     </>
   );
